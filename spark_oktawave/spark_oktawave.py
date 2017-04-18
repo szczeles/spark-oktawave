@@ -9,7 +9,8 @@ import requests
 
 commands = {
     'master': "nohup bash -c 'apt update && apt install -y openjdk-8-jre-headless ca-certificates-java python3-pip && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-master.sh && pip3 install jupyter && jupyter notebook --no-browser --allow-root --NotebookApp.token=haselko123 --ip=0.0.0.0' > /var/log/jupyter.log 2>&1 < /dev/null &",
-    'slave': "nohup bash -c 'apt update && apt install -y openjdk-8-jre-headless ca-certificates-java && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-slave.sh {}:7077' > /var/log/slave.log 2>&1 < /dev/null &"
+    'slave': "nohup bash -c 'apt update && apt install -y openjdk-8-jre-headless ca-certificates-java && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-slave.sh {}:7077' > /var/log/slave.log 2>&1 < /dev/null &",
+    'jupyter-pass': "ps -ef | grep jupyter-notebook | grep -v grep | sed -e's/.*token=\([^ ]\+\).*/\\1/'"
 }
 
 def initialize_clients(ctx):
@@ -167,10 +168,15 @@ def get_ip(ctx, server):
         ['_results']['VirtualMachineView'][0]['TopAddress'])
 
 def run_via_ssh(command, ip):
-    cmd = ['ssh', '-i', '~/.ssh/id_rsa', '-o', 'StrictHostKeyChecking=no'] #todo rsa key
+    cmd = ['ssh', '-q', '-i', '~/.ssh/id_rsa', '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null'] #todo rsa key
     cmd.append('root@{}'.format(ip))
     cmd.append(command)
-    return subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+    try:
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        return output.decode('utf-8').strip('\n')
+    except subprocess.CalledProcessError as e:
+        print("Command {} failed with code {}".format(cmd, e.returncode))
+        print(e.output)
 
 def get_master_ip(ctx):
     return get_ip(ctx, '{}-master'.format(ctx.obj['cluster_name']))
@@ -179,7 +185,7 @@ def initialize_server(ctx, server):
     ip = get_ip(ctx, server)
     mode = 'master' if server.endswith('-master') else 'slave'
     command = commands[mode].format(get_master_ip(ctx))
-    print(run_via_ssh(command, get_ip(ctx, server)))
+    run_via_ssh(command, get_ip(ctx, server))
 
 def setup(ctx):
     running_deployments = get_running_deployments(ctx)
@@ -215,6 +221,29 @@ def list(ctx):
             hosts[vm['VirtualMachineName']] = {'host': vm['VirtualMachineName'], 'ready': True}
 
     print(hosts)
+
+@cli.command()
+@click.argument('cluster-name')
+@click.pass_context
+@click.option('-v', '--verbose', is_flag=True)
+def info(ctx, cluster_name, verbose):
+    ctx.obj['cluster_name'] = cluster_name
+    master_ip = get_master_ip(ctx)
+    print("Cluster name: {}".format(cluster_name))
+    print("Spark Master UI: http://{}:8080/".format(master_ip))
+    print("Jupyter: http://{}:8888/".format(master_ip))
+    print("Jupyter password: {}".format(run_via_ssh(commands['jupyter-pass'], master_ip)))
+    vms = (ctx.obj['client_api'].service.GetVirtualMachines(
+        searchParams={ 
+            'ClientId': ctx.obj['client_id'], 
+            'SearchText': cluster_name + '-',
+            'PageSize': 1000})
+        ['_results']['VirtualMachineView'])
+    print("Slaves: {}".format(len(vms)-1))
+    if verbose:
+        for vm in vms:
+            if vm['VirtualMachineName'] != '{}-master'.format(cluster_name):
+                print(' * {}'.format(vm['TopAddress']))
 
 
 @cli.command()
