@@ -224,6 +224,14 @@ def list(ctx):
         ctx.invoke(info, cluster_name=cluster, verbose=False)
         print()
 
+def get_price_per_hour(ctx, instance_type):
+    if not 'pricelists' in ctx.obj:
+        ctx.obj['pricelists'] = {
+            pl['VirtualMachineClass']['DictionaryItemId']: pl['PricePerHour'] 
+            for pl in ctx.obj['common_api'].service.GetVirtualMachineClassConfigurationsWithPrice(clientId=ctx.obj['client_id'])
+        }
+    return ctx.obj['pricelists'][instance_type]
+
 @cli.command()
 @click.argument('cluster-name')
 @click.pass_context
@@ -246,6 +254,8 @@ def info(ctx, cluster_name, verbose):
             'SearchText': cluster_name + '-',
             'PageSize': 1000})
         ['_results']['VirtualMachineView'])
+    total_price = sum([get_price_per_hour(ctx, vm['VMClass']['DictionaryItemId']) for vm in vms])
+    print("Price per hour: {:.2f} PLN".format(total_price))
     print("Slaves: {}".format(len(vms)-1))
     if verbose:
         for vm in vms:
