@@ -7,6 +7,7 @@ import subprocess
 from zeep import cache
 import requests
 import random
+import datetime
 import string
 
 commands = {
@@ -256,6 +257,10 @@ def info(ctx, cluster_name, verbose):
         ['_results']['VirtualMachineView'])
     total_price = sum([get_price_per_hour(ctx, vm['VMClass']['DictionaryItemId']) for vm in vms])
     print("Price per hour: {:.2f} PLN".format(total_price))
+    started_at = min(map(lambda vm: vm['CreationDate'], vms)).replace(tzinfo=datetime.timezone.utc)
+    running_seconds = (datetime.datetime.now(datetime.timezone.utc) - started_at).total_seconds()
+    hours, remainder = divmod(running_seconds, 3600)
+    print("Running for {} h {} m".format(int(hours), int(remainder/60)))
     print("Slaves: {}".format(len(vms)-1))
     if verbose:
         for vm in vms:
