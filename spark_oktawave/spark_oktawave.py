@@ -6,10 +6,12 @@ import time
 import subprocess
 from zeep import cache
 import requests
+import random
+import string
 
 commands = {
-    'master': "nohup bash -c 'apt update && apt install -y openjdk-8-jre-headless ca-certificates-java python3-pip && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-master.sh && pip3 install jupyter && jupyter notebook --no-browser --allow-root --NotebookApp.token=haselko123 --ip=0.0.0.0' > /var/log/jupyter.log 2>&1 < /dev/null &",
-    'slave': "nohup bash -c 'apt update && apt install -y openjdk-8-jre-headless ca-certificates-java && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-slave.sh {}:7077' > /var/log/slave.log 2>&1 < /dev/null &",
+    'master': "nohup bash -c 'apt update && apt install -y openjdk-8-jre-headless ca-certificates-java python3-pip && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-master.sh && pip3 install jupyter && jupyter notebook --no-browser --allow-root --NotebookApp.token={jupyter_password} --ip=0.0.0.0' > /var/log/jupyter.log 2>&1 < /dev/null &",
+    'slave': "nohup bash -c 'apt update && apt install -y openjdk-8-jre-headless ca-certificates-java && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-slave.sh {master_ip}:7077' > /var/log/slave.log 2>&1 < /dev/null &",
     'jupyter-pass': "ps -ef | grep jupyter-notebook | grep -v grep | sed -e's/.*token=\([^ ]\+\).*/\\1/'"
 }
 
@@ -136,7 +138,7 @@ def launch(ctx, cluster_name, slaves, disk_size, master_class, slave_class):
     for i in range(slaves):
         launch_vm(ctx, "{}-slave{}".format(cluster_name, i+1), disk_size, slave_class)
 
-    print('going to setup')
+    print('Waiting for cloud resources...')
     setup(ctx)
 
 '''
@@ -181,10 +183,16 @@ def run_via_ssh(command, ip):
 def get_master_ip(ctx):
     return get_ip(ctx, '{}-master'.format(ctx.obj['cluster_name']))
 
+# thanks to http://stackoverflow.com/a/2257449/7098262
+def generate_password(size):
+    return ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(size))
+
 def initialize_server(ctx, server):
     ip = get_ip(ctx, server)
     mode = 'master' if server.endswith('-master') else 'slave'
-    command = commands[mode].format(get_master_ip(ctx))
+    command = commands[mode].format(
+        master_ip=get_master_ip(ctx),
+        jupyter_password=generate_password(8))
     run_via_ssh(command, get_ip(ctx, server))
 
 def setup(ctx):
@@ -205,22 +213,16 @@ def setup(ctx):
 @cli.command()
 @click.pass_context
 def list(ctx):
-    hosts = {}
-    operations = ctx.obj['common_api'].service.GetRunningOperations(
-        clientId=ctx.obj['client_id'])
-    if operations:
-        for operation in operations:
-            hosts[operation['ObjectName']] = {'host': operation['ObjectName'], 'ready': False}
-
-    vms = ctx.obj['client_api'].service.GetVirtualMachines(
+    masters = ctx.obj['client_api'].service.GetVirtualMachines(
         searchParams={
             'ClientId': ctx.obj['client_id'], 
+            'SearchText': '-master',
             'PageSize': 1000})['_results']
-    if vms:
-        for vm in vms['VirtualMachineView']:
-            hosts[vm['VirtualMachineName']] = {'host': vm['VirtualMachineName'], 'ready': True}
 
-    print(hosts)
+    clusters = [master['VirtualMachineName'].split('-master')[0] for master in masters['VirtualMachineView']] if masters else []
+    for cluster in sorted(clusters):
+        ctx.invoke(info, cluster_name=cluster, verbose=False)
+        print()
 
 @cli.command()
 @click.argument('cluster-name')
@@ -228,11 +230,16 @@ def list(ctx):
 @click.option('-v', '--verbose', is_flag=True)
 def info(ctx, cluster_name, verbose):
     ctx.obj['cluster_name'] = cluster_name
-    master_ip = get_master_ip(ctx)
     print("Cluster name: {}".format(cluster_name))
+    master_ip = get_master_ip(ctx)
+    jupyter_password = run_via_ssh(commands['jupyter-pass'], master_ip)
+    if not jupyter_password:
+        print("Cluster is initilizing... Try again")
+        return
+
     print("Spark Master UI: http://{}:8080/".format(master_ip))
     print("Jupyter: http://{}:8888/".format(master_ip))
-    print("Jupyter password: {}".format(run_via_ssh(commands['jupyter-pass'], master_ip)))
+    print("Jupyter password: {}".format(jupyter_password))
     vms = (ctx.obj['client_api'].service.GetVirtualMachines(
         searchParams={ 
             'ClientId': ctx.obj['client_id'], 
