@@ -9,9 +9,12 @@ import requests
 import random
 import datetime
 import string
+from concurrent.futures import ThreadPoolExecutor
+
+BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 
 commands = {
-    'master': "nohup bash -c 'apt update && apt install -y openjdk-8-jre-headless ca-certificates-java python3-pip && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-master.sh && pip3 install jupyter && jupyter notebook --no-browser --allow-root --NotebookApp.token={jupyter_password} --ip=0.0.0.0' > /var/log/jupyter.log 2>&1 < /dev/null &",
+    'master': "nohup bash -c 'SPARK_DAEMON_MEMORY=128m apt update && apt install -y openjdk-8-jre-headless ca-certificates-java python3-pip supervisor && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-master.sh && pip3 install jupyter && /etc/init.d/supervisor restart' > /var/log/master.log 2>&1 < /dev/null &",
     'slave': "nohup bash -c 'apt update && apt install -y openjdk-8-jre-headless ca-certificates-java && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-slave.sh {master_ip}:7077' > /var/log/slave.log 2>&1 < /dev/null &",
     'jupyter-pass': "ps -ef | grep jupyter-notebook | grep -v grep | sed -e's/.*token=\([^ ]\+\).*/\\1/'"
 }
@@ -91,7 +94,7 @@ def upload_ssh_key(ctx):
     assert get_ssh_key_id(ctx, name) != None
 
 def launch_vm(ctx, name, disk_size, vmclass):
-    ctx.obj['client_api'].service.CreateVirtualMachineWithAuthSettings(
+    task = ctx.obj['client_api'].service.CreateVirtualMachineWithAuthSettings(
         templateId=452, # ubuntu 16.04 LTS
         diskSizeGB=disk_size,
         machineName=name,
@@ -108,6 +111,7 @@ def launch_vm(ctx, name, disk_size, vmclass):
             ctx.obj['client_api'].get_type('ns1:ArrayOfint')([ctx.obj['ssh_key_id']])
         )
     )
+    print("Launching {} in task {}".format(name, task['AsynchronousOperationId']))
 
 @click.group()
 @click.option('--credentials', help='Path to credentials file', default='~/.spark-oktawave-credentials')
@@ -166,16 +170,20 @@ def get_running_deployments(ctx):
                 if operation['ObjectName'].startswith(ctx.obj['cluster_name'])])
     
 def get_ip(ctx, server):
-    return (ctx.obj['client_api'].service.GetVirtualMachines(
+    vminfo = (ctx.obj['client_api'].service.GetVirtualMachines(
         searchParams={'ClientId': ctx.obj['client_id'], 'SearchText': server, 'PageSize': 1})
-        ['_results']['VirtualMachineView'][0]['TopAddress'])
+        ['_results'])
+    if vminfo:
+        return vminfo['VirtualMachineView'][0]['TopAddress']
 
-def run_via_ssh(command, ip):
+    raise Exception("Unable to get ip for server {}".format(server))
+
+def run_via_ssh(command, ip, input=None):
     cmd = ['ssh', '-q', '-i', '~/.ssh/id_rsa', '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null'] #todo rsa key
     cmd.append('root@{}'.format(ip))
-    cmd.append(command)
+    cmd.append('LC_ALL=en_US.UTF-8 ' + command)
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        output = subprocess.check_output(cmd, input=input.encode('utf-8') if input else None, stderr=subprocess.STDOUT)
         return output.decode('utf-8').strip('\n')
     except subprocess.CalledProcessError as e:
         print("Command {} failed with code {}".format(cmd, e.returncode))
@@ -191,9 +199,24 @@ def generate_password(size):
 def initialize_server(ctx, server):
     ip = get_ip(ctx, server)
     mode = 'master' if server.endswith('-master') else 'slave'
-    command = commands[mode].format(
-        master_ip=get_master_ip(ctx),
-        jupyter_password=generate_password(8))
+    wait_for_port(ip, 22)
+
+    if mode == 'master':
+        scp_template(ip, 'spark-defaults.conf', {
+            'master_ip': ip,
+            'ocs_tenant': ctx.obj['config']['ocs']['tenant'],
+            'ocs_username': ctx.obj['config']['ocs']['user'],
+            'ocs_password': ctx.obj['config']['ocs']['password'],
+            'ocs_container': ctx.obj['config']['ocs']['container']
+        }, '/etc/spark/spark-defaults.conf')
+
+        scp_template(ip, 'jupyter.conf', {
+            'jupyter_token': generate_password(8)
+        }, '/etc/supervisor/conf.d/jupyter.conf')
+        
+        scp_template(ip, 'Spark.ipynb', {}, '/root/Spark.ipynb')
+
+    command = commands[mode].format(master_ip=get_master_ip(ctx))
     run_via_ssh(command, get_ip(ctx, server))
 
 def setup(ctx):
@@ -232,6 +255,16 @@ def get_price_per_hour(ctx, instance_type):
             for pl in ctx.obj['common_api'].service.GetVirtualMachineClassConfigurationsWithPrice(clientId=ctx.obj['client_id'])
         }
     return ctx.obj['pricelists'][instance_type]
+
+def scp_template(ip, filename, variables, destpath):
+    with open(os.path.join(BASE_DIR, '..', 'templates', filename)) as f:
+        template = string.Template(f.read())
+        config = template.substitute(variables)
+        run_via_ssh(
+            'mkdir -p {} && cat - > {}'.format(
+                os.path.dirname(destpath),
+                destpath
+            ), ip, input=config)
 
 @cli.command()
 @click.argument('cluster-name')
@@ -278,18 +311,36 @@ def destroy(ctx, cluster_name):
             'ClientId': ctx.obj['client_id'], 
             'SearchText': cluster_name + "-",
             'PageSize': 1000})['_results']
+    
+    def shutdown_vm(id):
+        ctx.obj['client_api'].service.DeleteVirtualMachine(
+            virtualMachineId=id, 
+            clientId=ctx.obj['client_id'])
+
     if vms:
-        for vm in vms['VirtualMachineView']:
-            ctx.obj['client_api'].service.DeleteVirtualMachine(
-                virtualMachineId=vm['VirtualMachineId'], 
-                clientId=ctx.obj['client_id'])
+        with ThreadPoolExecutor(len(vms['VirtualMachineView'])) as executor:
+            for vm in vms['VirtualMachineView']:
+                executor.submit(shutdown_vm, vm['VirtualMachineId'])
 
     if get_ssh_key_id(ctx, cluster_name):
         remove_ssh_key(ctx, cluster_name)
 
-
 def main():
     cli(obj={})
+
+def is_port_open(ip, port):
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.connect((ip, int(port)))
+        s.shutdown(2)
+        return True
+    except:
+        return False
+
+def wait_for_port(ip, port):
+    while not is_port_open(ip, port):
+        time.sleep(1)
 
 if __name__ == '__main__':
     main()
