@@ -4,7 +4,6 @@ import os
 import zeep
 import time
 import subprocess
-from zeep import cache
 import requests
 import random
 import datetime
@@ -20,7 +19,6 @@ commands = {
 }
 
 def initialize_clients(ctx):
-    cache = zeep.cache.SqliteCache(path='/tmp/spark-oktawave.db')
     session = requests.Session()
     session.auth = requests.auth.HTTPBasicAuth(
         'API\{}'.format(ctx.obj['config']['oktawave']['user']), 
@@ -28,11 +26,11 @@ def initialize_clients(ctx):
 
     ctx.obj['common_api'] = zeep.Client(
         'https://api.oktawave.com/CommonService.svc?wsdl', 
-        transport=zeep.transports.Transport(session=session, cache=cache))
+        transport=zeep.transports.Transport(session=session))
 
     ctx.obj['client_api'] = zeep.Client(
         'https://api.oktawave.com/ClientsService.svc?wsdl',
-        transport=zeep.transports.Transport(session=session, cache=cache))
+        transport=zeep.transports.Transport(session=session))
 
     logon_data = ctx.obj['common_api'].service.LogonUser(
         user=ctx.obj['config']['oktawave']['user'],
