@@ -3,10 +3,10 @@ import configparser
 import os
 import time
 import subprocess
-import random
 import datetime
 import string
 from api import *
+from utils import *
 
 BASE_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -15,18 +15,6 @@ commands = {
     'slave': "nohup bash -c 'apt update && apt install -y openjdk-8-jre-headless ca-certificates-java && wget -qO- http://d3kbcqa49mib13.cloudfront.net/spark-2.1.0-bin-hadoop2.7.tgz | tar xz && mv spark-2.1.0-bin-hadoop2.7 /usr/local/spark && /usr/local/spark/sbin/start-slave.sh {master_ip}:7077' > /var/log/slave.log 2>&1 < /dev/null &",
     'jupyter-pass': "ps -ef | grep jupyter-notebook | grep -v grep | sed -e's/.*token=\([^ ]\+\).*/\\1/'"
 }
-
-def translate_vm_class(ctx, name):
-    if not 'vmclass_cache' in ctx.obj:
-        dict_type =ctx.obj['common_api'].get_type('ns4:Consts.DAL.Dictionary')
-        ctx.obj['vmclass_cache'] = ctx.obj['common_api'].service.GetDictionaryItems(
-            dictionary=dict_type('VirtualMachineClass'))
-
-    for vmclass in ctx.obj['vmclass_cache']:
-        if vmclass['DictionaryItemNames']['DictionaryItemName'][0]['ItemName'] == name:
-            return vmclass['DictionaryItemId']
-
-    raise Exception('Invalid vm class: {}'.format(name))
 
 @click.group()
 @click.option('--credentials', help='Path to credentials file', default='~/.spark-oktawave-credentials')
@@ -103,10 +91,6 @@ def run_via_ssh(command, ip, input=None):
 
 def get_master_ip(ctx):
     return get_ip(ctx, '{}-master'.format(ctx.obj['cluster_name']))
-
-# thanks to http://stackoverflow.com/a/2257449/7098262
-def generate_password(size):
-    return ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(size))
 
 def initialize_server(ctx, server):
     ip = get_ip(ctx, server)
@@ -224,19 +208,7 @@ def destroy(ctx, cluster_name):
 def main():
     cli(obj={})
 
-def is_port_open(ip, port):
-    import socket
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.connect((ip, int(port)))
-        s.shutdown(2)
-        return True
-    except:
-        return False
-
-def wait_for_port(ip, port):
-    while not is_port_open(ip, port):
-        time.sleep(1)
-
 if __name__ == '__main__':
     main()
+
+
