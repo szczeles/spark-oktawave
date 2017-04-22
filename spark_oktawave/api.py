@@ -95,16 +95,18 @@ class OktawaveApi:
                 'ClientId': self.client_id,
                 'SearchText': search_text,
                 'PageSize': 1000})['_results']
+
         if not result:
             return []
 
+        vm_powered_on = 86
         return [{
             'id': vm['VirtualMachineId'],
             'name': vm['VirtualMachineName'],
             'ip': vm['TopAddress'],
             'class_id': vm['VMClass']['DictionaryItemId'],
             'started_at': vm['CreationDate'],
-        } for vm in result['VirtualMachineView']]
+        } for vm in result['VirtualMachineView'] if vm['StatusDictId'] == vm_powered_on]
 
     def delete_vm(self, id):
         self.clients_api.service.DeleteVirtualMachine(virtualMachineId=id, clientId=self.client_id)
