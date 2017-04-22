@@ -2,3 +2,4 @@ graft spark_oktawave
 
 include README.md
 include LICENSE
+include spark-oktawave-credentials.sample
