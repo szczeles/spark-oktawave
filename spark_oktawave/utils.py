@@ -32,7 +32,7 @@ def run_command(ip, ssh_key, command, input=None):
         print(e.output)
 
 def copy_file(ip, ssh_key, template_name, variables, target_file):
-    with open(os.path.join(BASE_DIR, '..', 'templates', template_name)) as f:
+    with open(os.path.join(BASE_DIR, 'templates', template_name)) as f:
         template = string.Template(f.read())
         config = template.substitute(variables)
         run_command(ip, ssh_key,

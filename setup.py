@@ -1,8 +1,9 @@
 import setuptools
+from spark_oktawave import __version__
 
 setuptools.setup(
     name='spark-oktawave',
-    version='1.1',
+    version=__version__,
     url='https://github.com/szczeles/spark-oktawave',
     author='Mariusz Strzelecki',
     author_email='szczeles@gmail.com',
