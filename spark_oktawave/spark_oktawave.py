@@ -1,7 +1,7 @@
 import click
 import configparser
 import os
-from api import *
+from .api import *
 
 @click.group()
 @click.option('--credentials', help='Path to credentials file', default='~/.spark-oktawave-credentials')

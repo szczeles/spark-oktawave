@@ -2,7 +2,7 @@ import zeep
 import requests
 from concurrent.futures import ThreadPoolExecutor
 import time
-from utils import *
+from .utils import *
 import datetime
 
 class OktawaveApi:

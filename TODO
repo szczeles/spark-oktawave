@@ -3,6 +3,6 @@
 3. Reading data from OCI [DONE]
 4. Setup anaconda
 5. Setup graphite and collectd
-6. Launching vms in parallel
-7. Initializing vms in parallel
-8. Refactoring - oktawave API and utils in separate classes
+6. Launching vms in parallel [DONE]
+7. Initializing vms in parallel [NOT NEEDED]
+8. Refactoring - oktawave API and utils in separate classes [DONE]
