@@ -2,7 +2,7 @@ import setuptools
 
 setuptools.setup(
     name='spark-oktawave',
-    version='1.0',
+    version='1.1',
     url='https://github.com/szczeles/spark-oktawave',
     author='Mariusz Strzelecki',
     author_email='szczeles@gmail.com',
