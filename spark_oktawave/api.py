@@ -136,6 +136,7 @@ class Cluster:
         self.uninitialized_hosts = set()
         self.vms = {}
         self.ssh_key = ssh_key
+        self._refresh_nodes()
 
     def get_ssh_key_id(self):
         if self.ssh_key_id:
@@ -268,7 +269,6 @@ class Cluster:
         return self.vms.values()
 
     def get_hourly_charge(self):
-        self._refresh_nodes()
         return sum(map(lambda vm: self.api.get_price_per_hour(vm['class_id']), self.get_nodes()))
 
     def get_uptime(self):
@@ -276,3 +276,22 @@ class Cluster:
         running_seconds = (datetime.datetime.now(datetime.timezone.utc) - started_at).total_seconds()
         hours, remainder = divmod(running_seconds, 3600)
         return "{}h {}m".format(int(hours), int(remainder/60))
+
+    def get_node_function(self, host):
+        return host.split(self.name + '-')[1]
+
+    def install_collectd(self, graphite_host):
+        command = 'apt-get install -o Dpkg::Options::="--force-confold" -y --no-install-recommends collectd'
+
+        def run_on_node(node):
+            copy_file(node['ip'], self.ssh_key, 'collectd.conf', {
+                'hostname': self.get_node_function(node['name']),
+                'cluster_name': self.name,
+                'graphite_host': graphite_host
+            }, '/etc/collectd/collectd.conf')
+            
+            run_command(node['ip'], self.ssh_key, command)
+
+        with ThreadPoolExecutor(len(self.get_nodes())) as executor:
+            for node in self.get_nodes():
+                executor.submit(run_on_node, node)

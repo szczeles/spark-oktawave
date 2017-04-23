@@ -43,6 +43,14 @@ def list(ctx):
 
 @cli.command()
 @click.argument('cluster-name')
+@click.argument('graphite-host')
+@click.pass_context
+def enable_monitoring(ctx, cluster_name, graphite_host):
+    cluster = Cluster(ctx.obj['api'], cluster_name, ctx.obj['config']['oktawave']['private_ssh_key'])
+    cluster.install_collectd(graphite_host)
+
+@cli.command()
+@click.argument('cluster-name')
 @click.pass_context
 @click.option('-v', '--verbose', is_flag=True)
 def info(ctx, cluster_name, verbose):
