@@ -252,9 +252,13 @@ class Cluster:
             unprepared_hosts = set(filter(lambda op: op.startswith(self.name), self.api.get_running_operations()))
             ready_vms = self.uninitialized_hosts - unprepared_hosts
             for host in ready_vms:
-                self.initialize_host(host, ocs_credentials)
+                try:
+                    self.initialize_host(host, ocs_credentials)
+                    print('M' if self.is_master(host) else 'S', end='', flush=True)
+                except Exception as ex:
+                    print("Unable to initialize {}: {}".format(host, ex))
+
                 self.uninitialized_hosts.remove(host)
-                print('M' if self.is_master(host) else 'S', end='', flush=True)
 
             if len(self.uninitialized_hosts):
                 print('.', end='', flush=True)
