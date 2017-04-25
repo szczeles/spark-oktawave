@@ -206,6 +206,10 @@ class Cluster:
         '''.replace('\n', '')
         run_command(ip, self.ssh_key, command)
 
+    def disable_password_login(self, ip):
+        command = 'echo "PasswordAuthentication no" | tee -a /etc/ssh/sshd_config && service ssh restart && service sshguard stop'
+        run_command(ip, self.ssh_key, command)
+
     def initialize_slave(self, ip):
         command = '''
         nohup bash -c 'apt update && 
@@ -227,10 +231,14 @@ class Cluster:
 
         return self.vms[host] if host in self.vms else None
 
-    def get_ip(self, host):
+    def get_ip(self, host, retries=5):
         host_info = self.get_host_info(host)
         if not host_info:
-            raise Exception("Unable to get IP for host {}".format(host))
+            if retries > 0:
+                time.sleep(2)
+                return self.get_ip(host, retries-1)
+            else:
+                raise Exception("Unable to get IP for host {}".format(host))
         return host_info['ip']
 
 
@@ -242,6 +250,8 @@ class Cluster:
             
     def initialize_host(self, host, ocs_credentials):
         ip = self.get_ip(host)
+        time.sleep(10) # for ssh and sshguard
+        self.disable_password_login(ip)
         if self.is_master(host):
             self.initialize_master(ip, ocs_credentials)
         else:

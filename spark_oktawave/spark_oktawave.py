@@ -22,7 +22,7 @@ def balance(ctx):
 @click.option('--slaves', default=2, help='number of slaves')
 @click.option('--disk-size', default=10, help='disk size [GB]')
 @click.option('--master-class', default='v1.standard-2.2', help='master class')
-@click.option('--slave-class', default='v1.highcpu-4.2', help='slave class')
+@click.option('--slave-class', default='v1.highcpu-8.4', help='slave class')
 @click.pass_context
 def launch(ctx, cluster_name, slaves, disk_size, master_class, slave_class):
     cluster = Cluster(ctx.obj['api'], cluster_name, ctx.obj['config']['oktawave']['private_ssh_key'])
