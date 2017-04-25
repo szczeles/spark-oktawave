@@ -20,6 +20,7 @@ def generate_password(size):
     return ''.join(random.choice(string.ascii_lowercase + string.digits) for _ in range(size))
 
 def run_command(ip, ssh_key, command, input=None):
+    wait_for_port(ip, 22)
     cmd = ['ssh', '-q', '-i', ssh_key, '-o', 'StrictHostKeyChecking=no', '-o', 'UserKnownHostsFile=/dev/null'] 
     cmd.append('root@{}'.format(ip))
     cmd.append('LC_ALL=en_US.UTF-8 ' + command)
@@ -32,6 +33,7 @@ def run_command(ip, ssh_key, command, input=None):
         print(e.output)
 
 def copy_file(ip, ssh_key, template_name, variables, target_file):
+    wait_for_port(ip, 22)
     with open(os.path.join(BASE_DIR, 'templates', template_name)) as f:
         template = string.Template(f.read())
         config = template.substitute(variables)
