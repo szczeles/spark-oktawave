@@ -6,6 +6,17 @@ Install using:
 
     pip3 install https://github.com/szczeles/spark-oktawave/archive/master.zip
 
+Before first use copy `spark-oktawave-credentials.sample` file to `~/.spark-oktawave-credentials` and update with credentials to oktawave manager and OCS.
+
+Available commands:
+
+  * balance - shows current oktawave balance
+  * launch - launches the new spark cluster, by default starts 2 slaves with 8 cores and 4GB of RAM
+  * destroy - destroys cluster and frees all resources
+  * list - lists running clusters
+  * info - shows detailed information of cluster
+  * enable monitoring - installs `collectd` deamon on all nodes
+
 
 ## Cluster monitoring
 
